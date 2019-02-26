@@ -35,11 +35,14 @@ int main(int args, char **argv)
 
 
   printf("Aqui termina el main\n");
-
+  uint32_t data = 1;
+  uint32_t offset = 1;
   while(1)
   {
-      queue_send_test(clk_wiz0, 0x0000000F, 0x0000000A);
-      sleep(1);
+      queue_send_test(clk_wiz0, offset, data);
+      data++;
+      offset++;
+      sleep(3);
   }
 
 

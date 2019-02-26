@@ -73,6 +73,7 @@ void read_all_clk_reg(void *clk_wiz)
 }
 
 
+
 void *clk_wiz_write(void *argg)
 {
     struct clock_wizard clk_wiz = *((struct clock_wizard *)(argg));
@@ -81,37 +82,16 @@ void *clk_wiz_write(void *argg)
     char *buff = (char *)malloc(sizeof(uint32_t)*2);
     uint8_t state = 0;
 
+
     while(1)
     {
         mq_receive(clk_wiz.queue, buff, 1000, &prio); // TODO: Change de length value
         printf("buff = %s\n\n", buff);
 
-        switch(state) // TODO: Define states
-        {
-          case 0:
-            if(buff[0] == 'o')
-            {
-              clk_wiz_data.dir_offset = atoi((buff + 1));
-              state = 1;
-            }
-            break;
-          case 1:
-            if(buff[0] == 'd')
-            {
-              clk_wiz_data.data = atoi((buff + 1));
-              state = 1;
-            }
-            break;
-          case 2:
-            // Write into registers maybe valide
-            state = 0;
-            break;
-
-        }
+        memcpy(&clk_wiz_data, buff, sizeof(clk_wiz_data));
 
         printf("Thread id: %d\nOffset: %d\nData: %d\n\n", clk_wiz.id, clk_wiz_data.dir_offset, clk_wiz_data.data);
 
-        sleep(1);
     }
 
     printf("I'm the thread with id: %d\n", clk_wiz.id); // Only for debug
@@ -145,17 +125,8 @@ void queue_send_test(void *clk_wiz, uint32_t offset, uint32_t data)
     ++i;
   }
 
-  printf("i = %d\n\n", i);
-  sprintf(buff, "%c%u", 'o', pkg.dir_offset);
+  memcpy(buff, &pkg, sizeof(pkg));
 
-  printf("I'm going to send %s\n", buff);
-
-  if(mq_send(clk_wiz_prop[i].queue, buff, sizeof(uint32_t) + 1, prio) < 0)
-  {
-    perror("Error\n"); fflush(stdout);
-  }
-
-  sprintf(buff, "%c%u", 'd', pkg.data);
   printf("I'm going to send %s\n", buff);
 
   if(mq_send(clk_wiz_prop[i].queue, buff, sizeof(uint32_t) + 1, prio) < 0)

@@ -13,14 +13,14 @@
 #include <unistd.h>
 
 
-#define N_MMCM          XC7Z010CLG400_1 
+#define N_MMCM          XC7Z010CLG400_1
 #define QUEUE_DIR       "/"
 
 #define CLK_WIZ_ALL_DATA_REG     23
 #define CLK_CONF_REG23           0x25C
 
 #define CLK_WIZ_SR               0x04
-#define CLK_WIZ_INT_STAT         0x0C 
+#define CLK_WIZ_INT_STAT         0x0C
 #define CLK_WIZ_INT_EN           0x10
 
 
@@ -39,7 +39,7 @@ struct clock_wizard
 
     mqd_t queue;
     struct mq_attr queue_attr;
-}; 
+};
 
 struct clock_wizard_pkg
 {
@@ -50,17 +50,18 @@ struct clock_wizard_pkg
 static struct clock_wizard clk_wiz_prop[N_MMCM];
 
 
-
-
-
-
 void clk_wiz_init(void *clk_wiz);
-
-void update(void *clk_wiz);     // This can be done easily 
+void update(void *clk_wiz);     // This can be done easily TODO: Change by infinite loop
 void clk_wiz_write_reg(void *clk_wiz, uint32_t dir_offset, uint32_t data);
 void read_all_clk_reg(void *clk_wiz);
 
+/* Threads */
+
+
 void *clk_wiz_write(void *argg);
+
+
+/* Test functions */
 
 void queue_send_test(void *clk_wiz, uint32_t offset, uint32_t data);
 
