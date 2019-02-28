@@ -1,100 +1,97 @@
 #include "clk_wiz.h"
+#include <sys/mman.h>
 
-void clk_wiz_init(void *clk_wiz)
+void clkwiz_init(void *clk_wiz)
 {
   static uint8_t n_wiz = 0;
+  uint8_t pc;
 
-  if(n_wiz < N_MMCM)
+  if(!n_wiz)
   {
-    const char *queue_dir = "/MyQueue"; // FIXME: Change the name, also below
-    struct mq_attr at;  // FIXME: Remove me
-    clk_wiz_prop[n_wiz].clk_wiz = clk_wiz;
-    clk_wiz_prop[n_wiz].id = n_wiz;
+      pthread_mutex_init(&clkwiz_addmutex, NULL);
+      pthread_mutexattr_init(&clkwiz_addmutexattr);
 
-    pthread_attr_init(&clk_wiz_prop[n_wiz].clk_wiz_thread_attr);
+      pthread_attr_init(&clkwiz.threadattr);
 
-    clk_wiz_prop[n_wiz].queue_attr.mq_msgsize = sizeof(uint32_t)*2;
-    clk_wiz_prop[n_wiz].queue_attr.mq_maxmsg = 1;
-    clk_wiz_prop[n_wiz].queue_attr.mq_flags = 0;
-    clk_wiz_prop[n_wiz].queue_attr.mq_curmsgs = 0;
+      clkwiz.data = (struct clkwiz_data **)malloc(sizeof(struct clkwiz_data *));
 
-    //sprintf(queue_dir, "%s%d%s", "/home/guille/Documents/", clk_wiz_prop[n_wiz].id, "th");
-    printf("Dir: %s\n", queue_dir);
-    mq_unlink("/MiQueue");
-    clk_wiz_prop[n_wiz].queue = mq_open("/MiQueue", (O_RDWR|O_CREAT), (S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH), &(clk_wiz_prop[n_wiz].queue_attr));
-    if(clk_wiz_prop[n_wiz].queue < 0)
-    {
-      perror("mq_open error");
-      exit(-1);
-    }
+      clkwiz.active = 0;
 
 
+      pthread_mutex_lock(&clkwiz_addmutex);
+      pc = pthread_create(&clkwiz.thread, &clkwiz.threadattr,
+           clkwiz_thread, NULL);
+      if(pc)
+      {
+        perror("Error creating thread for Clock Wizard"); // TODO: Change for error()
+        exit(-1);
+      }
+  }
 
-    uint8_t rc = pthread_create(&clk_wiz_prop[n_wiz].clk_wiz_thread, &clk_wiz_prop[n_wiz].clk_wiz_thread_attr, clk_wiz_write, &clk_wiz_prop[n_wiz]);
-    if(rc)
-    {
-      printf("ERROR: pthread_create() is %d\n", rc);
-      exit(-1);
-    }
-    ++n_wiz;
+  if(n_wiz < MMCM_PLL)
+  {
+     clkwiz.clkwiz_map[n_wiz] = clk_wiz;
+
+     clkwiz.data[clkwiz.active] = (struct clkwiz_data *)malloc(sizeof(struct clkwiz_data *));
+     memset(clkwiz.data[clkwiz.active], 0, sizeof(struct clkwiz_data *));
+
+     clkwiz.tasks = (clkwiz_flags *)malloc(sizeof(clkwiz_flags));
+     memset(clkwiz.tasks, 0, sizeof(clkwiz_flags));
+
+
+     ++clkwiz.active;
+
+     pthread_mutex_init(&clkwiz.mutex[n_wiz], NULL);
+     pthread_mutexattr_init(&clkwiz.mutexattr[n_wiz]);
+
+     pthread_mutex_unlock(&clkwiz_addmutex);
+     ++n_wiz;
   }else
   {
-    perror("More MMCM is not suppoted by this device");
+    perror("More MMCM/PLL is not suppoted by this device");
   }
 }
 
 
-void update(void *clk_wiz)
+
+void *clkwiz_thread(void *argg)
 {
-  *((uint32_t *)clk_wiz+CLK_CONF_REG23) = 0x00000003;
-  // TODO: Add delays.
-  *((uint32_t *)clk_wiz+CLK_CONF_REG23) = 0x00000002;
-  *((uint32_t *)clk_wiz) = 0x0000000A;
-}
-
-
-void clk_wiz_write_reg(void *clk_wiz, uint32_t dir_offset, uint32_t data)
-{
-
-    printf("SR = %d\n", (*((uint32_t *)clk_wiz+CLK_WIZ_SR))); // Only for debug
-
-    WAIT_FOR_LOCK(clk_wiz);                  // TODO: This function can not be blocked
-
-    *((uint32_t *)(clk_wiz + dir_offset)) = data;   // TODO: This can be managed by a thread
-
-    update(clk_wiz);
-}
-
-void read_all_clk_reg(void *clk_wiz)
-{
-    uint8_t i;
-    for(i = 0; i < CLK_WIZ_ALL_DATA_REG; ++i)
-        printf("Register in offset %#05x = %#010x\n", i*0x4 + 0x200,*((uint32_t *)(clk_wiz + i*0x4 + 0x200)));
-}
-
-
-
-void *clk_wiz_write(void *argg)
-{
-    struct clock_wizard clk_wiz = *((struct clock_wizard *)(argg));
-    struct clock_wizard_pkg clk_wiz_data;
-    unsigned prio = 1;
-    char *buff = (char *)malloc(sizeof(uint32_t)*2);
-    uint8_t state = 0;
-
+    uint8_t i, check;
 
     while(1)
     {
-        mq_receive(clk_wiz.queue, buff, 1000, &prio); // TODO: Change de length value
-        printf("buff = %s\n\n", buff);
+      pthread_mutex_lock(&clkwiz_addmutex);
 
-        memcpy(&clk_wiz_data, buff, sizeof(clk_wiz_data));
+      for(i = 0; i < clkwiz.active; ++i)
+      {
+        check = pthread_mutex_trylock(&clkwiz.mutex[i]);
+        if(!check)
+        {
+          switch(clkwiz.tasks[i].all)
+          {
+            case 0x01:                // TODO: Create predefined values. Hexadecial ones
+                                      //       are only for test.
+              printf("Case 0x01:\n");
+              break;
+            case 0x02:
+              printf("Case 0x02:\n");
+              printf("Data from struct: %d\n", (*clkwiz.data)[i].reg_value);
+              clkwiz.tasks[i].all = 0;
+              break;
+            case 0x04:
+              printf("Case 0x04:\n");
+              break;
+          }
+        }
 
-        printf("Thread id: %d\nOffset: %d\nData: %d\n\n", clk_wiz.id, clk_wiz_data.dir_offset, clk_wiz_data.data);
+        pthread_mutex_unlock(&clkwiz.mutex[i]);
+      }
 
+
+      pthread_mutex_unlock(&clkwiz_addmutex);
+      //TODO: Add semaphore
     }
 
-    printf("I'm the thread with id: %d\n", clk_wiz.id); // Only for debug
     pthread_exit(NULL);
 }
 
@@ -105,36 +102,23 @@ void *clk_wiz_write(void *argg)
 
 /* Test Function */
 
-
-void queue_send_test(void *clk_wiz, uint32_t offset, uint32_t data)
+void test_thread_com(void *clk_wiz, uint32_t multiply, uint8_t c)
 {
-  struct clock_wizard_pkg pkg;
-  unsigned prio = 0;
-  pkg.dir_offset = offset;
-  pkg.data = data;
-
-  char *buff = (char *)malloc(sizeof(uint32_t)*2);
-
+  pthread_mutex_lock(&clkwiz_addmutex);
 
   uint8_t i = 0;
-  while(i < N_MMCM)           // it looks for the Clock Wizard
+  while(i < clkwiz.active)
   {
-    if(clk_wiz == clk_wiz_prop[i].clk_wiz)
+    if(clk_wiz == clkwiz.clkwiz_map[i])
       break;
 
     ++i;
   }
 
-  memcpy(buff, &pkg, sizeof(pkg));
+  clkwiz.tasks[i].all = c;
+  (*clkwiz.data)[i].reg_value = multiply;
 
-  printf("I'm going to send %s\n", buff);
-
-  if(mq_send(clk_wiz_prop[i].queue, buff, sizeof(uint32_t) + 1, prio) < 0)
-  {
-    perror("Error\n"); fflush(stdout);
-  }
-
-
+  pthread_mutex_unlock(&clkwiz_addmutex);
 }
 
 
