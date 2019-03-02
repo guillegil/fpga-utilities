@@ -25,14 +25,16 @@ int main(int args, char **argv)
   }
 
   clk_wiz0 = mmap(NULL, sysconf(_SC_PAGESIZE), PROT_READ|PROT_WRITE,  MAP_SHARED, fd, CLK_WIZ0);
-
+  printf("Here!\n");
   clkwiz_init(clk_wiz0);
 
   uint32_t mult = 0;
+
+  clk_divide(clk_wiz0, 0xFF, CLK_OUTPUT_ALL);
+
+  
   while(1)
   {
-      test_thread_com(clk_wiz0, mult, 2);
-      mult++;
       sleep(1);
   }
 

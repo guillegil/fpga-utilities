@@ -52,11 +52,25 @@
 #define CLK_CONF_REG22           0x258  // Clock Configuration Register 22          (R/W)
 #define CLK_CONF_REG23           0x25C  // Clock Configuration Register 23          (R/W)
 
+#define CLK_OUTPUT_ALL			(0)
+#define CLK_OUTPUT1			 	(1)
+#define CLK_OUTPUT2			 	(2)
+#define CLK_OUTPUT3			 	(3)
+#define CLK_OUTPUT4			 	(4)
+#define CLK_OUTPUT5			 	(5)
+#define CLK_OUTPUT6			 	(6)
+#define CLK_OUTPUT7			 	(7)
+#define CLK_OUTPUT8			 	(8)
+
+#define CLKWIZ_RESET			 (1)
+#define CLKWIZ_READ			     (2)
+#define CLKWIZ_WRITE			 (4)
 
 #define WAIT_FOR_LOCK(clk_wiz)  while(!(*((uint32_t *)(clk_wiz + CLK_WIZ_SR))))  // TODO: Remove when solved
 
 #define SET_CLK_UPDATE(clk_wiz) *((uint32_t *)(clk_wiz + CLK_CONF_REG23)) = 0x00000003
 #define UNSET_CLK_UPDATE(clk_wiz) *((uint32_t *)(clk_wiz + CLK_CONF_REG23)) = 0x00000002
+
 
 typedef union {					// Flags
 	unsigned char all;			// Todos
@@ -76,19 +90,17 @@ typedef union {					// Flags
 
 struct clkwiz_data
 {
-    uint8_t  outputs;
+    uint32_t  outputs;
     uint32_t reg_value;
 };
 
-pthread_mutex_t      clkwiz_addmutex;
-pthread_mutexattr_t  clkwiz_addmutexattr;
+pthread_mutex_t      clkwiz_mutex;
+pthread_mutexattr_t  clkwiz_mutexattr;
 
 struct clock_wizard_threadinfo
 {
     pthread_t            thread;
     pthread_attr_t       threadattr;
-    pthread_mutex_t      mutex[MMCM_PLL];
-    pthread_mutexattr_t  mutexattr[MMCM_PLL];
 
     void                *clkwiz_map[MMCM_PLL];
     uint8_t              active;
@@ -112,6 +124,7 @@ void *clkwiz_thread(void *argg);
 /* Test functions */
 
 void test_thread_com(void *clk_wiz, uint32_t multiply, uint8_t c);
+int clk_divide(void *clk_wiz, uint8_t div, uint8_t output);
 
 
 
