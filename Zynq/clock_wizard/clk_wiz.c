@@ -1,7 +1,7 @@
 #include "clk_wiz.h"
 #include <sys/mman.h>
 
-void clkwiz_init(void *clk_wiz)
+void clkwiz_init(void *clk_wiz, uint8_t n_outputs)
 {
   static uint8_t n_wiz = 0;
   uint8_t pc;
@@ -30,12 +30,21 @@ void clkwiz_init(void *clk_wiz)
      pthread_mutex_lock(&clkwiz_mutex);
      clkwiz.clkwiz_map[n_wiz] = clk_wiz;
 
+     printf("HERE!\n");
+
      clkwiz.data[clkwiz.active] = (struct clkwiz_data *)malloc(sizeof(struct clkwiz_data *));
      memset(clkwiz.data[clkwiz.active], 0, sizeof(struct clkwiz_data *));
+
+     (*clkwiz.data)[clkwiz.active].reg_value = (uint32_t *)calloc(n_outputs, sizeof(uint32_t));
+
+     memset((*clkwiz.data)[clkwiz.active].reg_value, 0, sizeof((*clkwiz.data)[clkwiz.active].reg_value));
 
      clkwiz.tasks = (clkwiz_flags *)malloc(sizeof(clkwiz_flags));
      memset(clkwiz.tasks, 0, sizeof(clkwiz_flags));
 
+     clkwiz.n_outputs  = (uint8_t **)malloc(sizeof(uint8_t *));
+     clkwiz.n_outputs[clkwiz.active]  = (uint8_t *)malloc(sizeof(uint8_t));
+     (*clkwiz.n_outputs)[clkwiz.active] = n_outputs;
 
      ++clkwiz.active;
 
@@ -51,42 +60,46 @@ void clkwiz_init(void *clk_wiz)
 
 void *clkwiz_thread(void *argg)
 {
-    uint8_t i, mlock, pend = 0;
-
+    uint8_t i, task_counter = 0b00000001, mlock;
     while(1)
     {
       mlock = pthread_mutex_trylock(&clkwiz_mutex);
-      if(!mlock)  // If not do other thing or block when sem_wait();
+      if(!mlock)
       {
         for(i = 0; i < clkwiz.active; ++i)
         {
-          switch(clkwiz.tasks[i].all)
+          switch((task_counter & clkwiz.tasks[i].all)*(CHECK_LOCK(clkwiz.clkwiz_map[i])))
           {
             case CLKWIZ_RESET:
+              *((uint32_t *)(clkwiz.clkwiz_map[i])) = 0xA;
+              clkwiz.tasks[i].f0 = 0;
               break;
-            case CLKWIZ_READ:
-              (*clkwiz.data)[i].reg_value = *((uint32_t *)(clkwiz.clkwiz_map[i] +
-                                            (*clkwiz.data)[i].outputs));
-              clkwiz.tasks[i].all = 0;
+            case CLKWIZ_DIVIDE:
+                SET_CLK_UPDATE(clkwiz.clkwiz_map[i]);
+                if((*clkwiz.data)[i].outputs.all != 0)
+                {
+                  for(uint8_t j = 0; j < (*clkwiz.n_outputs)[i]; ++j)
+                  {
+                    if(((GET_OUTPUTS(i) >> j) & 0b00000001) && GET_REG_VALUE(i,CLK_CONF_REG2 + j*0xC) == GET_DATA(i,j))
+                      (*clkwiz.data)[i].outputs.all = (*clkwiz.data)[i].outputs.all & (~(0b00000001 << j));
+                  }
+                }else
+                {
+                  UNSET_CLK_UPDATE(clkwiz.clkwiz_map[i]);
+                  clkwiz.tasks[i].f1 = 0;
+                }
               break;
-            case CLKWIZ_WRITE:
-              *((uint32_t *)(clkwiz.clkwiz_map[i] + (*clkwiz.data)[i].outputs)) = (*clkwiz.data)[i].reg_value;
-
+            case CLKWIZ_DIVIDE_ALL:
               SET_CLK_UPDATE(clkwiz.clkwiz_map[i]);
-
-              if(*((uint32_t *)(clkwiz.clkwiz_map[i] + (*clkwiz.data)[i].outputs)) != (*clkwiz.data)[i].reg_value) // TODO: Do not block. DONE!
+              if(GET_REG_VALUE(i, CLK_CONF_REG0) == (*clkwiz.data)[i].reg_value[0])
               {
-                pend = 1;
-              }else
-              {
+                clkwiz.tasks[i].f2 = 0;
                 UNSET_CLK_UPDATE(clkwiz.clkwiz_map[i]);
-                clkwiz.tasks[i].all = 0;
-                pend = 0;
               }
-
-
               break;
           }
+
+          (task_counter == 0b10000000) ? (task_counter = 1) : (task_counter <<= 1);
         }
       }
 
@@ -99,6 +112,62 @@ void *clkwiz_thread(void *argg)
 }
 
 
+void clk_divide(void *clk_wiz, uint8_t *div, uint8_t outputs, uint8_t this_update)
+{
+  pthread_mutex_lock(&clkwiz_mutex);
+  uint8_t i = 0;
+  while(i < clkwiz.active)
+  {
+    if(clk_wiz == clkwiz.clkwiz_map[i])
+      break;
+
+    ++i;
+  }
+
+  uint8_t j = 0, k = 0;
+  (*clkwiz.data)[i].outputs.all = outputs;
+
+  while(j < (*clkwiz.n_outputs)[i])
+  {
+     if((outputs >> j) & 0b00000001)
+     {
+        *((uint32_t *)(clkwiz.clkwiz_map[i] + CLK_CONF_REG2+j*0xC)) = div[k];
+        (*clkwiz.data)[i].reg_value[j] = div[k];
+        ++k;
+       }
+    ++j;
+  }
+
+  clkwiz.tasks[i].all |= CLKWIZ_DIVIDE;
+  clkwiz.update = this_update;
+
+  pthread_mutex_unlock(&clkwiz_mutex);
+}
+
+void clk_divide_all(void *clk_wiz, uint8_t divide)
+{
+  pthread_mutex_lock(&clkwiz_mutex);
+  uint8_t i = 0;
+  while(i < clkwiz.active)
+  {
+    if(clk_wiz == clkwiz.clkwiz_map[i])
+      break;
+    ++i;
+  }
+
+  *((uint32_t *)(clkwiz.clkwiz_map[i] + CLK_CONF_REG0)) = (*((uint32_t *)(clkwiz.clkwiz_map[i] + CLK_CONF_REG0)) & (0xFFFFFF00)) | divide;
+
+  (*clkwiz.data)[i].reg_value[0] = divide;
+
+  clkwiz.tasks[i].all |= CLKWIZ_DIVIDE_ALL;
+
+  pthread_mutex_unlock(&clkwiz_mutex);
+}
+
+void clk_terminate()
+{
+  pthread_join(clkwiz.thread, NULL);
+}
 
 
 
@@ -119,51 +188,28 @@ void test_thread_com(void *clk_wiz, uint32_t multiply, uint8_t c)
   }
 
   clkwiz.tasks[i].all = c;
-  (*clkwiz.data)[i].reg_value = multiply;
+  //(*clkwiz.data)[i].reg_value = multiply;
 
   pthread_mutex_unlock(&clkwiz_mutex);
 }
 
 
-int clk_divide(void *clk_wiz, uint8_t div, uint8_t output)
+void read_all_clk_reg(void *clk_wiz)
 {
-  uint8_t mcheck = 0;
   pthread_mutex_lock(&clkwiz_mutex);
-  if(!mcheck)
+  uint8_t i = 0;
+  while(i < clkwiz.active)
   {
-    uint8_t i = 0;
-    while(i < clkwiz.active)
-    {
-      if(clk_wiz == clkwiz.clkwiz_map[i])
+    if(clk_wiz == clkwiz.clkwiz_map[i])
       break;
 
-      ++i;
-    }
+    ++i;
+  }
 
-    // If i == clkwiz.active do something.
-
-    switch(output)
-    {
-      case CLK_OUTPUT_ALL:
-        (*clkwiz.data)[i].outputs = CLK_CONF_REG0;
-        if(div != 0)
-        {
-          (*clkwiz.data)[i].reg_value = (*((uint32_t *)(clkwiz.clkwiz_map[i] + CLK_CONF_REG0)) & 0xFFFFFF00) | ((uint32_t)(div << 0));
-
-          clkwiz.tasks[i].f2 = 1;
-        }else
-        {
-          return -1;
-        }
-        break;
-      default:
-        return -1;
-        break;
-    }
-
+  for(uint8_t j = 0; j < 23; ++j)
+  {
+    printf("Clock Config Reg %d: %#010x\n", j, *((uint32_t *)(clkwiz.clkwiz_map[i] + j*0x4+CLK_CONF_REG0)));
   }
 
   pthread_mutex_unlock(&clkwiz_mutex);
-
-  return 0;
 }

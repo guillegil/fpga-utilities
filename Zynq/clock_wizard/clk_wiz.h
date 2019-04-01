@@ -16,7 +16,6 @@
 #define MMCM_PLL                  XC7Z010CLG400_1
 
 
-
 //TODO: Complete all definitions for all registers
 
 /* Clock wizard AXI Lite registers */
@@ -52,28 +51,32 @@
 #define CLK_CONF_REG22           0x258  // Clock Configuration Register 22          (R/W)
 #define CLK_CONF_REG23           0x25C  // Clock Configuration Register 23          (R/W)
 
-#define CLK_OUTPUT_ALL			(0)
-#define CLK_OUTPUT1			 	(1)
-#define CLK_OUTPUT2			 	(2)
-#define CLK_OUTPUT3			 	(3)
-#define CLK_OUTPUT4			 	(4)
-#define CLK_OUTPUT5			 	(5)
-#define CLK_OUTPUT6			 	(6)
-#define CLK_OUTPUT7			 	(7)
-#define CLK_OUTPUT8			 	(8)
+#define CLK_ALL_OUTPUTS			 (0)
+#define CLK_OUTPUT1			 	 (1)
+#define CLK_OUTPUT2			 	 (2)
+#define CLK_OUTPUT3			 	 (4)
+#define CLK_OUTPUT4			 	 (8)
+#define CLK_OUTPUT5			 	 (16)
+#define CLK_OUTPUT6			 	 (32)
+#define CLK_OUTPUT7			 	 (64)
 
-#define CLKWIZ_RESET			 (1)
-#define CLKWIZ_READ			     (2)
-#define CLKWIZ_WRITE			 (4)
+#define CLKWIZ_RESET			 (1)	// f0
+#define CLKWIZ_READ			     (2)	// f1
+#define CLKWIZ_DIVIDE			 (4)	// f2
+#define CLKWIZ_DIVIDE_ALL		 (8)	// f3
 
-#define WAIT_FOR_LOCK(clk_wiz)  while(!(*((uint32_t *)(clk_wiz + CLK_WIZ_SR))))  // TODO: Remove when solved
+#define WAIT_FOR_LOCK(clk_wiz)  while(!(*((uint32_t *)(clk_wiz + CLK_SR))))  // TODO: Remove when solved
 
-#define SET_CLK_UPDATE(clk_wiz) *((uint32_t *)(clk_wiz + CLK_CONF_REG23)) = 0x00000003
+#define SET_CLK_UPDATE(clk_wiz) *((uint32_t *)(clk_wiz + CLK_CONF_REG23)) = 0x00000007
 #define UNSET_CLK_UPDATE(clk_wiz) *((uint32_t *)(clk_wiz + CLK_CONF_REG23)) = 0x00000002
 
+#define CHECK_LOCK(clk_wiz)	*((uint32_t *)(clk_wiz + CLK_SR))
+#define GET_OUTPUTS(i) (*clkwiz.data)[i].outputs.all
+#define GET_REG_VALUE(i, off) *((uint32_t *)(clkwiz.clkwiz_map[i] + off))
+#define GET_DATA(i,j) (*clkwiz.data)[i].reg_value[j]
 
 typedef union {					// Flags
-	unsigned char all;			// Todos
+	unsigned char all;			// ALL
 
 	struct {
 		unsigned char f0 :1;		// Flag 0
@@ -90,8 +93,8 @@ typedef union {					// Flags
 
 struct clkwiz_data
 {
-    uint32_t  outputs;
-    uint32_t reg_value;
+    clkwiz_flags  outputs;
+    uint32_t 	 *reg_value;
 };
 
 pthread_mutex_t      clkwiz_mutex;
@@ -104,7 +107,9 @@ struct clock_wizard_threadinfo
 
     void                *clkwiz_map[MMCM_PLL];
     uint8_t              active;
+	uint8_t				 update;
     clkwiz_flags        *tasks;
+	uint8_t 		   **n_outputs;
     struct clkwiz_data **data;
 };
 
@@ -112,19 +117,22 @@ struct clock_wizard_threadinfo
 struct clock_wizard_threadinfo clkwiz;
 
 
-void clkwiz_init(void *clk_wiz);
-void read_all_clk_reg(void *clk_wiz);
+void clkwiz_init(void *clk_wiz, uint8_t n_outputs);
+void clk_divide(void *clk_wiz, uint8_t *div, uint8_t outputs, uint8_t this_update);
+void clk_divide_all(void *clk_wiz, uint8_t divide);
+void clk_terminate();
+
 
 /* Threads */
 
 
 void *clkwiz_thread(void *argg);
 
-
 /* Test functions */
 
 void test_thread_com(void *clk_wiz, uint32_t multiply, uint8_t c);
-int clk_divide(void *clk_wiz, uint8_t div, uint8_t output);
+// int clk_divide(void *clk_wiz, uint8_t div, uint8_t output);
+void read_all_clk_reg(void *clk_wiz);
 
 
 

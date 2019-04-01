@@ -9,7 +9,7 @@
 #include "clk_wiz.h"
 
 #define CLK_WIZ0        0x43C00000
-
+#define NOUTPUTS        1
 
 int main(int args, char **argv)
 {
@@ -18,6 +18,14 @@ int main(int args, char **argv)
   void *clk_wiz0, *clk_wiz1;
   char *name = "/dev/mem";
 
+  uint8_t all_outs = (CLK_OUTPUT1);
+
+  uint8_t divs[] =
+  {
+    0x7f,
+    0x7f
+  };
+
   if((fd = open(name, O_RDWR | O_SYNC)) < 0)
   {
     perror("open");
@@ -25,20 +33,21 @@ int main(int args, char **argv)
   }
 
   clk_wiz0 = mmap(NULL, sysconf(_SC_PAGESIZE), PROT_READ|PROT_WRITE,  MAP_SHARED, fd, CLK_WIZ0);
-  printf("Here!\n");
-  clkwiz_init(clk_wiz0);
+  clkwiz_init(clk_wiz0, NOUTPUTS);
 
-  uint32_t mult = 0;
+  read_all_clk_reg(clk_wiz0);
+  clk_divide(clk_wiz0, divs, all_outs, 1);
+  clk_divide_all(clk_wiz0, 0x7f);
 
-  clk_divide(clk_wiz0, 0xFF, CLK_OUTPUT_ALL);
-
-  
   while(1)
   {
-      sleep(1);
+      sleep(5);
+      read_all_clk_reg(clk_wiz0);
+      break;
   }
 
-
+  clk_terminate();
+  close(fd);
   munmap(clk_wiz0, sysconf(_SC_PAGESIZE));
 
 
