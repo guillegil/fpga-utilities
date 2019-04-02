@@ -1,4 +1,4 @@
-# Zynq FPGA Utilities
+# Soc FPGA projects and utilities
 
 ## Red Pitaya STEM125-14
 Utilities:
