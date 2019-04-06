@@ -2,9 +2,9 @@
 -- Company: 
 -- Engineer: 
 -- 
--- Create Date: 03/31/2019 08:41:02 PM
+-- Create Date: 04/02/2019 01:10:22 PM
 -- Design Name: 
--- Module Name: manchester_encoder - structural
+-- Module Name: serializer - structural
 -- Project Name: 
 -- Target Devices: 
 -- Tool Versions: 
@@ -21,7 +21,6 @@
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -33,93 +32,81 @@ use IEEE.NUMERIC_STD.ALL;
 --use UNISIM.VComponents.all;
 
 entity manchester_encoder is
+    generic(
+        PRE: STD_LOGIC := '0';
+        DATA_WIDTH: NATURAL := 8;
+        PREAMBLE_WIDTH: NATURAL := 8
+    );
     port(
-        clk2x:      in STD_LOGIC;
-        rst:        in STD_LOGIC;
+        clk:        in STD_LOGIC;
         start_tx:   in STD_LOGIC;
-        data_in:    in STD_LOGIC_VECTOR(7 downto 0);
+        data_in:    in STD_LOGIC_VECTOR(DATA_WIDTH - 1 downto 0);
         data_out:   out STD_LOGIC;
-        busy:       out STD_LOGIC 
+        busy:       out STD_LOGIC
     );
 end manchester_encoder;
 
 architecture structural of manchester_encoder is
 
-    constant START_WORD: STD_LOGIC_VECTOR(15 downto 0) := x"5555";   -- "0101010101010101"
-    constant STOP_WORD: STD_LOGIC_VECTOR(15 downto 0) := x"AAAA";    -- "1010101010101010"
-    
-    type STATES is (IDLE, SEND_START, SEND_DATA, WAIT1, SEND_STOP);
+    type STATES is (IDLE, TX0, SEND_DATA, SEND_STOP);
     signal CURRENT_STATE, NEXT_STATE: STATES := IDLE;
     
+    constant START_WORD: STD_LOGIC_VECTOR(PREAMBLE_WIDTH - 1 downto 0) := x"00";
     
-    signal DIN: STD_LOGIC_VECTOR(7 downto 0) := (others => '0');
-    signal MANCHESTER_WORD: STD_LOGIC_VECTOR(15 downto 0) := (others => '0');
-    signal DOUT, BSY: STD_LOGIC;
+    
+    signal FRAME: STD_LOGIC_VECTOR(PREAMBLE_WIDTH + DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal DOUT: STD_LOGIC := '0';
+    signal ENABLE: STD_LOGIC := '0';
+    
     
 begin
-
-    process(clk2x, rst) is  
-        variable COUNT: NATURAL range 0 to 15 := 0;
+    
+    process(clk, start_tx) is
+        variable COUNT: NATURAL range 0 to (PREAMBLE_WIDTH + DATA_WIDTH) := 0;
     begin
-        if(rst = '0') then
-        
-        else if(clk2x'event and clk2x ='1') then
+        if(clk'event and clk = '1') then
             case CURRENT_STATE is
             when IDLE =>
-                if(start_tx = '1') then
-                    NEXT_STATE <= SEND_START;
-                    DIN <= data_in;
-                    BSY <= '1';
-                    DOUT <= START_WORD(0);
-                else
-                    BSY <= '0';
-                    DOUT <= '0';
-                end if;
-           
-                
-            when SEND_START =>
-                if(COUNT = 15) then
-                    COUNT := 0;
-                    NEXT_STATE <= SEND_DATA;
-                    DOUT <= MANCHESTER_WORD(0);    
-                else
-                    if(count < 8) then
-                        MANCHESTER_WORD(2*COUNT) <= not(DIN(COUNT));
-                        MANCHESTER_WORD(2*COUNT + 1) <= DIN(COUNT);
+                    if(start_tx = '1') then
+                        NEXT_STATE <= TX0;
                     end if;
-                    
-                    COUNT := COUNT + 1;
-                    DOUT <= START_WORD(COUNT);
-                end if;                
-            when WAIT1 => 
-                DOUT <= MANCHESTER_WORD(0);    
-                NEXT_STATE <= SEND_DATA;
+            when TX0 =>
+                    if(start_tx = '0') then
+                        NEXT_STATE <= SEND_DATA;
+                        busy <= '1';
+                        FRAME <= data_in & START_WORD;
+                        DOUT <= FRAME(0);
+                        ENABLE <= '1';
+                    end if;
             when SEND_DATA =>
-                if(COUNT = 15) then
-                    COUNT := 0;
+                if(COUNT = PREAMBLE_WIDTH + DATA_WIDTH - 1) then
                     NEXT_STATE <= SEND_STOP;
-                    DOUT <= '0';
-                    BSY <= '1';
+                    COUNT := 0;
+                    ENABLE <= '0';
                 else
                     COUNT := COUNT + 1;
-                    DOUT <= MANCHESTER_WORD(COUNT);
+                    DOUT <= FRAME(COUNT);
                 end if;
-            when SEND_STOP => 
-                if(COUNT = 15) then
+                
+            when SEND_STOP =>
+                if(COUNT = PREAMBLE_WIDTH + DATA_WIDTH) then
                     COUNT := 0;
                     NEXT_STATE <= IDLE;
+                    busy <= '0';
                 else
                     COUNT := COUNT + 1;
                 end if;
                 
+                ENABLE <= '0';
                 DOUT <= '0';
+            when others => NEXT_STATE <= IDLE;
             end case;
         end if;
-        end if;
     end process;
-
+    
+    
     CURRENT_STATE <= NEXT_STATE;
-    data_out <= DOUT;
-    busy <= BSY;
+    data_out <= ((DOUT xor clk) and ENABLE) when PRE = '0' else ((not(DOUT) xor clk) nand ENABLE);
+                  
 
 end structural;
