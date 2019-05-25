@@ -5,51 +5,56 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-
-#include "clk_wiz.h"
+#include "mmcm_controll.h"
 
 #define CLK_WIZ0        0x43C00000
-#define NOUTPUTS        1
+
+
+void read_all_cfg(void *cfg)
+{
+    for(int i = 0; i < 20; ++i)
+    {
+        printf("Reg +%#05x = %#010x\n", 0x200 + 4*i, *((uint32_t *)(cfg + 0x200 + 4*i)));
+    }
+}
 
 int main(int args, char **argv)
 {
 
   int fd;
-  void *clk_wiz0, *clk_wiz1;
-  char *name = "/dev/mem";
+  char *name = "/dev/mem";  
 
-  uint8_t all_outs = (CLK_OUTPUT1);
+  mmcm_prop_t clk1_prop;
+  clk1_prop.fin = 125000000.000f;
+  clk1_prop.addr = CLK_WIZ0;
+  clk1_prop.active_outputs = 2;
+  clk1_prop.primitive = PLL_PRIMITIVE;
+  clk1_prop.features.all = 0xFFFF;
 
-  uint8_t divs[] =
-  {
-    0x7f,
-    0x7f
-  };
-
-  if((fd = open(name, O_RDWR | O_SYNC)) < 0)
+  if((fd = open(name, O_RDWR)) < 0)
   {
     perror("open");
     return 1;
   }
 
-  clk_wiz0 = mmap(NULL, sysconf(_SC_PAGESIZE), PROT_READ|PROT_WRITE,  MAP_SHARED, fd, CLK_WIZ0);
-  clkwiz_init(clk_wiz0, NOUTPUTS);
 
-  read_all_clk_reg(clk_wiz0);
-  clk_divide(clk_wiz0, divs, all_outs, 1);
-  clk_divide_all(clk_wiz0, 0x7f);
+  // void *cfg = mmap(NULL, sysconf(_SC_PAGESIZE), PROT_READ | PROT_WRITE,  MAP_SHARED, fd, CLK_WIZ0);
+  // read_all_cfg(cfg);
 
-  while(1)
+
+  int clk_id;
+  clk_id = init_clock_device(fd, &clk1_prop) ;
+  if(clk_id < 0)
   {
-      sleep(5);
-      read_all_clk_reg(clk_wiz0);
-      break;
+    perror("Init clock device");
+    exit(1);
   }
 
-  clk_terminate();
-  close(fd);
-  munmap(clk_wiz0, sysconf(_SC_PAGESIZE));
+  printf("Output 0 frequency %f MHz\n", get_frequency(clk_id, 0)/1000000.0f);
+  printf("Output 0 frequency %f MHz\n", set_frequency(clk_id, 0, 100000000.000f)/1000000.0f);
 
+  printf("Output 1 frequency %f MHz\n", get_frequency(clk_id, 1)/1000000.0f);
 
-    return 0;
+  close_clock_device(clk_id);
+  return 0;
 }
