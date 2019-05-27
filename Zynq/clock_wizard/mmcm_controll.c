@@ -127,14 +127,15 @@ uint32_t get_reg_value(void *cfg, uint32_t offset, uint8_t bup, uint8_t bdown)
     
     return ((reg_val >> bdown) & mask);
 }
-void read_all(int id)
+
+/* Used only for debug */
+void read_all(int id)   
 {
-    for(int i = 0; i < 20; ++i)
+    for(int i = 0; i < 23; ++i)
     {
         printf("Reg +%#05x = %#010x\n", CLK_CONF_REG0 + 4*i, __read_reg(__mmcm_devices[id].cfg, CLK_CONF_REG0 + 4*i));
     }
 }
-
 
 
 /*
@@ -180,7 +181,7 @@ int init_clock_device(int fd, const mmcm_prop_t *mmcm_info)
     return (__active_devices - 1);
 }
 
-void close_clock_device(int id)
+void close_clock_device(int id) 
 {
     if(id < __active_devices)
     {
@@ -190,14 +191,12 @@ void close_clock_device(int id)
 }
 
 
-
 float get_frequency(int id, uint8_t output)
 {
     if(id > __active_devices)
         return -1;
     
     float o = get_reg_value(__mmcm_devices[id].cfg, CLK_CONF_REG2 + 0xC*output, 7, 0);
-
 
     if(output == 0)
     {
@@ -208,20 +207,34 @@ float get_frequency(int id, uint8_t output)
     return (__mmcm_devices[id].m * __mmcm_devices[id].info.fin)/(__mmcm_devices[id].d * o);
 }
 
+float get_vco_frequency(int id)
+{
+    if(id > __active_devices)
+        return -1;
+
+    return ((__mmcm_devices[id].m * __mmcm_devices[id].info.fin) / (__mmcm_devices[id].d)) / 1000000.000f;
+}
+
 float set_frequency(int id, uint8_t output, uint32_t freq)
 {
     if(id > __active_devices)
         return -1;
 
-    uint32_t o = (__mmcm_devices[id].info.fin * __mmcm_devices[id].m)/((float)freq * __mmcm_devices[id].d); 
-
-    if(o > 255)
+    uint32_t o = (__mmcm_devices[id].info.fin * __mmcm_devices[id].m) / ((float)freq * __mmcm_devices[id].d);  // TODO: This has to be float.
+    if(o > 255 || o == 0)
         return -2;
-    
-    *((uint32_t *)(__mmcm_devices[id].cfg + CLK_CONF_REG2 + 0x0C * output)) = o;
-    __program_clock_device(__mmcm_devices[id].cfg);
 
+    // TODO: If output 0 is select add fractional values
+
+    __reset_device(__mmcm_devices[id].cfg);
+    // for(int i = 0; i < 23; i++)
+    //     *((uint32_t *)(__mmcm_devices[id].cfg + CLK_CONF_REG0 + 0x04 * i))  = *((uint32_t *)(__mmcm_devices[id].cfg + CLK_CONF_REG0 + 0x04 * i));
+    
+    __wait_locked(__mmcm_devices[id].cfg);
+    __write_reg(__mmcm_devices[id].cfg, CLK_CONF_REG2 + 0x0C * output, o);
+
+
+    __program_clock_device(__mmcm_devices[id].cfg); 
 
     return get_frequency(id, output);
-
 }

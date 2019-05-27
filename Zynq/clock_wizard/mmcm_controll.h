@@ -12,9 +12,12 @@
 
 
 #define __write_reg(cfg, offset, data) (*((uint32_t *)(cfg + offset)) = data)
-#define __read_reg(cfg, offset)		(*((uint32_t *)(cfg) + offset))
+#define __read_reg(cfg, offset)		(*((uint32_t *)(cfg + offset)))
 #define __get_frac(value, shift) (value >> shift)
-#define __program_clock_device(cfg) (*((uint32_t *)(cfg + CLK_CONF_REG23)) = 0x07)
+#define __reset_device(cfg) *((uint32_t *)(cfg)) = 0x0A
+#define __wait_locked(cfg) while(!__read_reg(cfg, CLK_SR))
+#define __program_clock_device(cfg)  *((uint32_t *)(cfg + CLK_CONF_REG23)) = 0x03
+
 
 #define mmcm_prop_t   struct __mmcm_info
 
@@ -34,7 +37,6 @@ static uint8_t __active_devices = 0;
 int init_clock_device(int fd, const mmcm_prop_t *mmcm_info);
 void close_clock_device(int id);
 
-//int set_frequency(int id, uint8_t output, uint32_t freq);
 float get_frequency(int id, uint8_t output);
 float set_frequency(int id, uint8_t output, uint32_t freq);
 

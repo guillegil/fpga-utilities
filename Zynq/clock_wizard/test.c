@@ -50,10 +50,26 @@ int main(int args, char **argv)
     exit(1);
   }
 
+  sleep(2);
+
   printf("Output 0 frequency %f MHz\n", get_frequency(clk_id, 0)/1000000.0f);
+  printf("Output 0 frequency %f MHz\n", set_frequency(clk_id, 0, 200000000.000f)/1000000.0f);
+
+  sleep(2);
+
+  printf("Output 0 frequency %f MHz\n", set_frequency(clk_id, 0, 300000000.000f)/1000000.0f);
+
+  sleep(2);
+
+  printf("Output 0 frequency %f MHz\n", set_frequency(clk_id, 0, 200000000.000f)/1000000.0f);
+
+  sleep(2);
+
   printf("Output 0 frequency %f MHz\n", set_frequency(clk_id, 0, 100000000.000f)/1000000.0f);
 
-  printf("Output 1 frequency %f MHz\n", get_frequency(clk_id, 1)/1000000.0f);
+  sleep(2);
+
+  printf("Output 0 frequency %f MHz\n", set_frequency(clk_id, 0, 50000000.000f)/1000000.0f);
 
   close_clock_device(clk_id);
   return 0;
